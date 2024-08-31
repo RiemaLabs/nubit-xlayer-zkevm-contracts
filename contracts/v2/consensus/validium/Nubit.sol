@@ -13,42 +13,15 @@ import "nuport-contracts/src/lib/verifier/DAVerifier.sol";
  */
 contract Nubit is
     IDataAvailabilityProtocol,
-    IPolygonDataCommitteeErrors,
     OwnableUpgradeable
 {
-    /**
-     * @notice Struct which will store all the data of the committee members
-     * @param url string that represents the URL of the member to be used to access the data
-     * @param addr address of the member that will be used to sign
-     */
-    struct Member {
-        string url;
-        address addr;
-    }
 
     // Name of the data availability protocol
     string internal constant _PROTOCOL_NAME = "Nubit";
 
-    // Size of a signature in bytes
-    uint256 internal constant _SIGNATURE_SIZE = 65;
+    uint256 internal constant _BLOB_POINTER_SIZE = 89;
 
-    // Size of an address in bytes
-    uint256 internal constant _ADDR_SIZE = 20;
-
-    // Specifies the required amount of signatures from members in the data availability committee
-    uint256 public requiredAmountOfSignatures;
-
-    // Hash of the addresses of the committee
-    bytes32 public committeeHash;
-
-    // Register of the members of the committee
-    Member[] public members;
-
-    /**
-     * @dev Emitted when the committee is updated
-     * @param committeeHash hash of the addresses of the committee members
-     */
-    event CommitteeUpdated(bytes32 committeeHash);
+    error InvalidArgumentLength(uint256 expectedGreaterThan, uint256 actual);
 
     /**
      * Disable initalizers on the implementation following the best practices
@@ -63,78 +36,22 @@ contract Nubit is
     }
 
     /**
-     * @notice Allows the admin to setup the members of the committee. Note that:
-     * The system will require N / M signatures where N => _requiredAmountOfSignatures and M => urls.length
-     * There must be the same amount of urls than addressess encoded in the addrsBytes
-     * A member is represented by the url and the address contained in urls[i] and addrsBytes[i*_ADDR_SIZE : i*_ADDR_SIZE + _ADDR_SIZE]
-     * @param _requiredAmountOfSignatures Required amount of signatures
-     * @param urls List of urls of the members of the committee
-     * @param addrsBytes Byte array that contains the addressess of the members of the committee
-     */
-    function setupCommittee(
-        uint256 _requiredAmountOfSignatures,
-        string[] calldata urls,
-        bytes calldata addrsBytes
-    ) external onlyOwner {
-        uint256 membersLength = urls.length;
-        if (membersLength < _requiredAmountOfSignatures) {
-            revert TooManyRequiredSignatures();
-        }
-        if (addrsBytes.length != membersLength * _ADDR_SIZE) {
-            revert UnexpectedAddrsBytesLength();
-        }
-
-        // delete previous member array
-        delete members;
-
-        address lastAddr;
-        for (uint256 i = 0; i < membersLength; i++) {
-            uint256 currentAddresStartingByte = i * _ADDR_SIZE;
-            address currentMemberAddr = address(
-                bytes20(
-                    addrsBytes[currentAddresStartingByte:currentAddresStartingByte +
-                        _ADDR_SIZE]
-                )
-            );
-
-            // Check url is not empty
-            if (bytes(urls[i]).length == 0) {
-                revert EmptyURLNotAllowed();
-            }
-
-            // Addresses must be setup in incremental order, in order to easily check duplicated address
-            if (lastAddr >= currentMemberAddr) {
-                revert WrongAddrOrder();
-            }
-            members.push(Member({url: urls[i], addr: currentMemberAddr}));
-
-            lastAddr = currentMemberAddr;
-        }
-
-        committeeHash = keccak256(addrsBytes);
-        requiredAmountOfSignatures = _requiredAmountOfSignatures;
-        emit CommitteeUpdated(committeeHash);
-    }
-
-    /**
      * @notice Verifies that the given signedHash has been signed by requiredAmountOfSignatures committee members
      * @param proofData Byte array containing the encoded IDAOracle & SharesProof
      */
     function verifyMessage(
-        bytes32, bytes calldata proofData
+        bytes32, bytes calldata blobpointerAndProof
     ) external view {
-        (IDAOracle bridge, SharesProof memory sharesProof) = abi.decode(proofData , (IDAOracle, SharesProof));
+        if (blobpointerAndProof.length < _BLOB_POINTER_SIZE) {
+            revert InvalidArgumentLength(_BLOB_POINTER_SIZE,blobpointerAndProof.length);
+        }
+
+        (IDAOracle bridge, SharesProof memory sharesProof) = abi.decode(blobpointerAndProof[_BLOB_POINTER_SIZE:] , (IDAOracle, SharesProof));
         if (sharesProof.attestationProof.tupleRootNonce == 0) return;
         (bool result,) = DAVerifier.verifySharesToDataRootTupleRoot(bridge, sharesProof);
         require(result, "Nuport verification failed");
     }
 
-    /**
-     * @notice Return the amount of committee members
-     */
-    function getAmountOfMembers() public view returns (uint256) {
-        return members.length;
-    }
 
     /**
      * @notice Return the protocol name
