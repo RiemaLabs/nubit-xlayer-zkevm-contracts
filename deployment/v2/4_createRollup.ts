@@ -296,7 +296,7 @@ async function main() {
 
             // // Setup data commitee to 0
             // await (await polygonDataCommittee?.setupCommittee(0, [], "0x")).wait();
-            await (await polygonDataCommittee?.setupCommittee(0, [], "0x")).wait();
+      
             console.log(dataAvailabilityProtocol, "deployed to:", polygonDataCommittee.target);
         } else {
             await (await polygonDataCommittee?.transferOwnership(adminZkEVM)).wait();
